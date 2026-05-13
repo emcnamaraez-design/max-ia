@@ -1,0 +1,7 @@
+id,nombre,descripcion,precio_auto,precio_camioneta,duracion_min,incluye,emoji
+1,Lavado Profesional,Limpieza exterior completa con cera,30000,40000,60,Lavado exterior + cera + llantas,🚿
+2,Lavado de Tapiz,Limpieza profunda de interior,120000,120000,180,Asientos + alfombras + techo,🧽
+3,Pulido Profesional,Pulido de pintura para eliminar rayones,120000,120000,240,Pulido + abrillantado + cera,✨
+4,Sellado Cerámico,Protección cerámica de larga duración,150000,150000,300,Sellado cerámico + hidrofóbico,🛡️
+5,Grabado de Patente,Grabado de patente en vidrios,30000,30000,30,Grabado en todos los vidrios,🔏
+6,Restauración de Focos,Pulido y restauración de focos opacos,30000,30000,60,Pulido + sellado de focos,💡
