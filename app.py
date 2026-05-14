@@ -1,9 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from agente_vendedor import procesar_mensaje
-import os
-import base64
-import time
+import os, base64, time
 
 app = Flask(__name__)
 CORS(app)
@@ -37,7 +35,6 @@ def chat():
             with open(filepath, 'wb') as f:
                 f.write(base64.b64decode(image_data))
             image_url = f"https://max-ia.onrender.com/imagen/{filename}"
-            print(f"Imagen guardada: {image_url}")
         except Exception as e:
             print(f"Error guardando imagen: {e}")
 
