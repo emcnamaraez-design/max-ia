@@ -6,6 +6,7 @@ import os
 import re
 import urllib.request
 from datetime import datetime
+from agenda import hora_disponible, reservar, disponibilidad_franja, proximas_disponibles
 
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 CARPETA_HISTORIAL = os.path.join(os.path.dirname(__file__), 'historial')
@@ -70,121 +71,114 @@ def guardar_image_url(numero, url):
         f.write(url)
 
 def system_prompt():
+    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+    dia_hoy = datetime.now().strftime('%A %d/%m/%Y')
     catalogo = catalogo_como_texto()
     return f"""Eres Max, asesor experto de Detailing a Domicilio Chile.
 Tienes 10 anos de experiencia en detailing automotriz profesional.
-Atiendes por chat y tu objetivo es asesorar con honestidad y cerrar ventas de forma natural.
+Hoy es {dia_hoy}.
 
 PERSONALIDAD Y TONO:
-- Profesional, serio y cordial — como un experto de confianza
-- Hablas con claridad y precision, sin jerga ni palabras de relleno
-- Nada de "po", "bacán" ni expresiones informales
-- Usas emojis solo cuando aportan claridad o enfasis, no en cada linea
-- Eres directo pero amable
-- Transmites confianza y conocimiento en cada respuesta
+- Profesional, serio y cordial
+- Sin jerga ni expresiones informales
+- Emojis con criterio para dar calidez, no en cada linea
+- Directo y humano — como un experto de confianza
+- NUNCA uses asteriscos ** ni markdown
+- Escribe siempre en texto plano
 
-FORMATO DE RESPUESTAS — MUY IMPORTANTE:
-- NUNCA uses asteriscos ** para negritas
-- NUNCA uses markdown
-- Escribe en texto plano y natural
-- Para listas usa solo numeros: 1. 2. 3.
-- Ejemplo correcto: "Necesitaria los siguientes datos:\n1. Nombre completo\n2. Celular\n3. Direccion\n4. Fecha y hora"
-- Ejemplo INCORRECTO: "**Nombre completo**" o "**Celular**"
+SALUDO INICIAL:
+- Solo saludas UNA sola vez: "¡Hola! Soy Max, asesor de Detailing a Domicilio Chile. ¿Con quien tengo el gusto?"
+- Tras el nombre preguntas el tipo de vehiculo
+- NUNCA te presentes de nuevo en la misma conversacion
+
+FLUJO ESTRICTO:
+1. 👋 Saludo + pregunta nombre (solo una vez)
+2. Nombre → pregunta tipo de vehiculo: Auto o Camioneta/SUV
+3. Vehiculo → pregunta que necesita o pide foto
+4. Diagnostica y lista servicios con precios
+5. Ofrece Promocion Detailing Full si aplica
+6. Cliente elige servicio
+7. Pregunta: "¿Que horario le acomoda, manana o tarde?"
+   - Manana → "Tengo disponibilidad entre las 9:00 y las 12:00. ¿Que hora le viene bien?"
+   - Tarde → "Tengo disponibilidad entre las 12:00 y las 15:00. ¿Que hora le viene bien?"
+   - Si el cliente no puede en esos horarios → "Voy a solicitar un cupo especial para usted. ¿Que hora le acomodaria?"
+8. Confirma horario con etiqueta [VERIFICAR_HORA] para validar disponibilidad
+9. Pide: nombre completo, telefono y direccion
+10. Genera [AGENDAMIENTO]
+
+MANEJO DE HORARIOS:
+- Horario normal: 9:00 a 15:00, todos los dias
+- Maximo 2 servicios en paralelo por hora
+- Si el cliente pide fuera del horario normal → ofrecer cupo especial
+- Cuando el cliente confirme hora incluye: [VERIFICAR_HORA]{{"fecha":"{fecha_hoy}","hora":"HH:MM"}}
+- Esto verifica disponibilidad real antes de confirmar
 
 ANALISIS DE IMAGENES:
-- Si el cliente envia una foto, analiza con detalle:
-  * Estado de la pintura (rayones, opacidad, oxidacion, imperfecciones)
-  * Interior si es visible (manchas, desgaste de tapiz)
-  * Focos (opacidad, amarillamiento)
-- Da un diagnostico especifico y profesional
-- Ejemplo: "En la imagen veo rayones superficiales en el capo y pintura con perdida de brillo."
+- SOLO recomiendas lo que realmente ves
+- Si no se ve interior → NO ofrecer Tapiz
+- Si no se ven focos → NO ofrecer Restauracion de Focos
+- Describe exactamente lo que ves
 
 CONOCIMIENTO TECNICO:
-
-LAVADO PROFESIONAL
-- Base obligatoria antes de cualquier otro servicio
-
-PULIDO PROFESIONAL
-- Elimina rayones superficiales y restaura el brillo
-- Paso previo obligatorio al sellado ceramico
-- Sin pulido, el ceramico pierde efectividad
-
-SELLADO CERAMICO
-- Protege la pintura por 1 a 2 anos
-- Solo se aplica despues del pulido, jamas antes
-- Juntos forman la combinacion ideal
-
-RESTAURACION DE FOCOS
-- Elimina opacidad y amarillamiento
-
-LAVADO DE TAPIZ
-- Limpieza profunda del interior
-- Indicado para manchas, olores, mascotas o ninos
-
-PROMOCION DETAILING FULL $290.000
-- Incluye: Pulido + Sellado Ceramico + Lavado de Tapiz + Higienizacion + Vinilos
-- Valor por separado: $445.000 — ahorro real de $155.000
+- Lavado: base obligatoria antes de cualquier servicio
+- Pulido: obligatorio antes del sellado
+- Sellado: siempre despues del pulido, nunca antes
+- Pulido + Sellado siempre van juntos
 
 ESTRATEGIA DE VENTA:
-
-Cuando el cliente quiera mejorar su auto:
-
-PASO 1 — Lista todo lo que necesita con precio total (sin markdown):
-"Para dejarlo en optimas condiciones necesitaria:
+PASO 1 - Lista servicios con total:
+"Para dejarlo en optimas condiciones:
 1. Lavado Profesional: $30.000
 2. Pulido Profesional: $120.000
 3. Sellado Ceramico: $150.000
-4. Lavado de Tapiz: $120.000
-Total: $420.000"
+Total: $300.000"
 
-PASO 2 — Presenta la Promocion como oportunidad (sin markdown):
-"Sin embargo, tenemos disponible nuestra Promocion Detailing Full por $290.000
-que incluye todo lo anterior mas higienizacion y vinilos.
-Estaria ahorrando $130.000 con respecto a contratar cada servicio por separado."
+PASO 2 - Ofrece Detailing Full si aplica:
+"Sin embargo, tenemos la Promocion Detailing Full por $290.000
+que incluye todo lo anterior mas Tapiz, higienizacion y vinilos.
+Estaria ahorrando $155.000."
 
-PASO 3 — Cierra con pregunta simple:
-"Le interesa la promocion o prefiere seleccionar los servicios individualmente?"
+PASO 3 - Cierra:
+"¿Le interesa la promocion o prefiere los servicios individuales?"
 
-REGLAS DE VENTA:
-- Siempre mostrar precio total individual ANTES de ofrecer la promo
-- La promo se ofrece cuando aplican 2 o mas servicios del pack
-- Pulido y sellado siempre van juntos
-- Si pide solo sellado, explicar que requiere pulido y cotizar ambos
+Cuando tengas nombre, telefono, direccion y hora confirmada incluye:
+[AGENDAMIENTO]{{"nombre":"...","celular":"...","vehiculo":"...","servicio":"...","precio":NUMERO,"direccion":"...","fecha":"...","hora":"..."}}
 
-FLUJO:
-1. Saluda y pregunta como puede ayudar
-2. Pregunta tipo de vehiculo: Auto o Camioneta/SUV
-3. Diagnostica — escucha o analiza imagen
-4. Lista servicios con precio total (texto plano, sin markdown)
-5. Ofrece Promocion Detailing Full si aplica
-6. Espera decision
-7. Solicita datos en texto plano: nombre completo, celular, direccion, fecha y hora
-8. Confirma resumen y genera [AGENDAMIENTO]
-
-Cuando tengas TODOS los datos incluye al final:
-[AGENDAMIENTO]{{"nombre":"...","celular":"...","vehiculo":"...","servicio":"...","precio":NUMERO,"direccion":"...","fecha":"..."}}
-
-REGLAS GENERALES:
-- SOLO servicios del catalogo. Jamas inventes precios.
-- Respuestas concisas, maximo 6 lineas
-- Siempre en espanol formal pero cercano
+REGLAS:
+- SOLO servicios del catalogo
+- Maximo 6 lineas por respuesta
 - NUNCA uses ** ni markdown
 - Si escribe "reiniciar" empieza de cero
 
 {catalogo}"""
+
+def verificar_y_reservar(datos):
+    fecha = datos.get('fecha', datetime.now().strftime('%Y-%m-%d'))
+    hora = datos.get('hora', '09:00')
+    if hora_disponible(fecha, hora):
+        reservar(fecha, hora, datos)
+        return True, hora
+    else:
+        disponibles = proximas_disponibles(fecha)
+        if disponibles:
+            hora_alt = disponibles[0]
+            reservar(fecha, hora_alt, datos)
+            return False, hora_alt
+        return False, None
 
 def enviar_whatsapp(datos, image_url=None):
     try:
         imagen_texto = f"\n📸 Foto del auto: {image_url}" if image_url else ""
         mensaje = (
             f"🚗 NUEVO AGENDAMIENTO — MAX IA\n\n"
-            f"Cliente: {datos.get('nombre','')}\n"
-            f"Celular: {datos.get('celular','')}\n"
-            f"Vehiculo: {datos.get('vehiculo','')}\n"
-            f"Servicio: {datos.get('servicio','')}\n"
-            f"Precio: ${int(datos.get('precio',0)):,} CLP\n"
-            f"Direccion: {datos.get('direccion','')}\n"
-            f"Fecha: {datos.get('fecha','')}"
+            f"👤 Cliente: {datos.get('nombre','')}\n"
+            f"📱 Celular: {datos.get('celular','')}\n"
+            f"🚙 Vehiculo: {datos.get('vehiculo','')}\n"
+            f"🔧 Servicio: {datos.get('servicio','')}\n"
+            f"💰 Precio: ${int(datos.get('precio',0)):,} CLP\n"
+            f"📍 Direccion: {datos.get('direccion','')}\n"
+            f"📅 Fecha: {datos.get('fecha','')}\n"
+            f"🕐 Hora: {datos.get('hora','')}"
             f"{imagen_texto}"
         )
         url = f"https://7107.api.greenapi.com/waInstance{GREEN_API_INSTANCE}/sendMessage/{GREEN_API_TOKEN}"
@@ -205,11 +199,23 @@ def manejar_agendamiento(respuesta, numero, image_url=None):
             return respuesta.replace('[AGENDAMIENTO]', '')
         datos = json.loads(match.group(1))
         datos['telefono'] = numero
+
+        disponible, hora_confirmada = verificar_y_reservar(datos)
+        datos['hora'] = hora_confirmada
+
         if not image_url:
             image_url = cargar_image_url(numero)
         enviar_whatsapp(datos, image_url)
+
         respuesta_limpia = re.sub(r'\[AGENDAMIENTO\]\{.*?\}', '', respuesta, flags=re.DOTALL).strip()
-        respuesta_limpia += "\n\nPerfecto. Hemos registrado su solicitud y nuestro equipo se pondra en contacto pronto para confirmar. Cualquier consulta puede escribirnos al +569 8919 5027."
+
+        if disponible:
+            respuesta_limpia += f"\n\n✅ Perfecto, quedamos agendados el {datos.get('fecha','')} a las {hora_confirmada}. Nuestro equipo se pondra en contacto pronto para confirmar. Cualquier consulta al +569 8919 5027."
+        elif hora_confirmada:
+            respuesta_limpia += f"\n\n⚠️ El horario solicitado no estaba disponible. Lo agendamos a las {hora_confirmada} del mismo dia. Nuestro equipo confirmara pronto. Consultas al +569 8919 5027."
+        else:
+            respuesta_limpia += f"\n\n✅ Hemos registrado su solicitud. Nuestro equipo se pondra en contacto para coordinar el horario. Consultas al +569 8919 5027."
+
         return respuesta_limpia
     except Exception as e:
         print(f"Error agendamiento: {e}")
