@@ -1,13 +1,23 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from agente_vendedor import procesar_mensaje
+import os
+import base64
+import time
 
 app = Flask(__name__)
 CORS(app)
 
+CARPETA_IMAGENES = os.path.join(os.path.dirname(__file__), 'cotizaciones')
+os.makedirs(CARPETA_IMAGENES, exist_ok=True)
+
 @app.route('/health', methods=['GET'])
 def health():
     return 'Max IA OK', 200
+
+@app.route('/imagen/<filename>', methods=['GET'])
+def servir_imagen(filename):
+    return send_from_directory(CARPETA_IMAGENES, filename)
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -17,6 +27,19 @@ def chat():
 
     image_data = data.get('image', None)
     image_type = data.get('image_type', 'image/jpeg')
+    image_url = None
+
+    if image_data:
+        try:
+            ext = 'jpg' if 'jpeg' in image_type else image_type.split('/')[-1]
+            filename = f"img_{int(time.time())}.{ext}"
+            filepath = os.path.join(CARPETA_IMAGENES, filename)
+            with open(filepath, 'wb') as f:
+                f.write(base64.b64decode(image_data))
+            image_url = f"https://max-ia.onrender.com/imagen/{filename}"
+            print(f"Imagen guardada: {image_url}")
+        except Exception as e:
+            print(f"Error guardando imagen: {e}")
 
     if 'message' in data:
         mensaje = data.get('message', '').strip()
@@ -41,7 +64,7 @@ def chat():
     if not mensaje:
         mensaje = 'hola'
 
-    respuesta = procesar_mensaje(numero, mensaje, image_data, image_type)
+    respuesta = procesar_mensaje(numero, mensaje, image_data, image_type, image_url)
     return jsonify({'reply': respuesta})
 
 if __name__ == '__main__':
