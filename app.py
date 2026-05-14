@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from agente_vendedor import procesar_mensaje
+from agenda import agenda_del_dia
 import os, base64, time
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +18,14 @@ def health():
 @app.route('/imagen/<filename>', methods=['GET'])
 def servir_imagen(filename):
     return send_from_directory(CARPETA_IMAGENES, filename)
+
+@app.route('/agenda', methods=['GET'])
+def ver_agenda():
+    fecha = request.args.get('fecha', datetime.now().strftime('%Y-%m-%d'))
+    reservas = agenda_del_dia(fecha)
+    if not reservas:
+        return jsonify({'fecha': fecha, 'mensaje': 'Sin reservas', 'reservas': []})
+    return jsonify({'fecha': fecha, 'reservas': reservas})
 
 @app.route('/chat', methods=['POST'])
 def chat():
