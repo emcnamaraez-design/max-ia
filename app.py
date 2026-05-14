@@ -14,6 +14,10 @@ def chat():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No se recibieron datos'}), 400
+
+    image_data = data.get('image', None)
+    image_type = data.get('image_type', 'image/jpeg')
+
     if 'message' in data:
         mensaje = data.get('message', '').strip()
         numero  = data.get('phone', 'web-visitor').strip()
@@ -21,17 +25,23 @@ def chat():
         mensajes = data.get('messages', [])
         mensaje = ''
         for m in reversed(mensajes):
-            if m.get('role') == 'user' and m.get('content') != 'INICIO':
-                mensaje = m.get('content', '').strip()
-                break
-        if not mensaje or mensaje == 'INICIO':
+            if m.get('role') == 'user' and m.get('content') not in ['INICIO', '']:
+                contenido = m.get('content', '')
+                if not contenido.startswith('[imagen]'):
+                    mensaje = contenido.strip()
+                    break
+        if data.get('text'):
+            mensaje = data.get('text', '').strip()
+        if not mensaje:
             mensaje = 'hola'
         numero = 'web-visitor'
     else:
         return jsonify({'error': 'Formato incorrecto'}), 400
+
     if not mensaje:
-        return jsonify({'error': 'Mensaje vacio'}), 400
-    respuesta = procesar_mensaje(numero, mensaje)
+        mensaje = 'hola'
+
+    respuesta = procesar_mensaje(numero, mensaje, image_data, image_type)
     return jsonify({'reply': respuesta})
 
 if __name__ == '__main__':
