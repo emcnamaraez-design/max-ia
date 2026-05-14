@@ -5,6 +5,7 @@ import json
 import os
 import re
 import urllib.request
+import base64
 from datetime import datetime
 
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
@@ -71,6 +72,16 @@ PERSONALIDAD:
 - Nunca presionas ni repites ofertas
 - Si el cliente dice "solo quiero X" — lo respetas y agendas sin insistir
 
+ANALISIS DE IMAGENES:
+- Si el cliente envia una foto de su auto, analiza visualmente:
+  * Estado de la pintura (rayones, opacidad, oxidacion)
+  * Estado del interior si se ve (manchas, desgaste)
+  * Estado de los focos (opacidad, amarillamiento)
+  * Cualquier dano visible
+- Da un diagnostico claro y breve basado en lo que ves
+- Recomienda el servicio adecuado segun el diagnostico visual
+- Se especifico: "Veo rayones superficiales en el capo..." no solo "la pintura esta mal"
+
 CONOCIMIENTO EXPERTO:
 
 LAVADO PROFESIONAL
@@ -83,7 +94,7 @@ PULIDO PROFESIONAL
 - Si pide solo sellado, explicar sutilmente:
   "Para que el sellado dure y proteja bien, la pintura necesita estar pulida primero.
    De lo contrario el ceramico se adhiere sobre imperfecciones y pierde efectividad.
-   ¿Tu auto tiene rayones o pintura opaca?"
+   Tu auto tiene rayones o pintura opaca?"
 - Excepcion: auto nuevo (menos de 6 meses) puede no necesitar pulido
 
 SELLADO CERAMICO
@@ -93,7 +104,7 @@ SELLADO CERAMICO
 
 RESTAURACION DE FOCOS
 - Si cliente quiere maxima durabilidad, mencionar capa protectora post-restauracion
-- Solo si el cliente muestra interes en durabilidad, no de forma proactiva
+- Solo si el cliente muestra interes en durabilidad
 
 LAVADO DE TAPIZ
 - Independiente del exterior
@@ -110,6 +121,7 @@ FLUJO:
 1. Saluda y pregunta nombre
 2. Pregunta tipo de vehiculo: Auto o Camioneta/SUV
 3. Pregunta que necesita o que problema tiene el auto
+   — Si envia imagen: analiza y diagnostica primero, luego recomienda
    — Rayones/opacidad → preguntar hace cuanto no pule
    — Quiere proteccion → explicar ruta Pulido + Sellado
    — Olor/manchas interior → Lavado de Tapiz
@@ -132,7 +144,7 @@ REGLAS:
 
 {catalogo}"""
 
-def enviar_whatsapp(datos):
+def enviar_whatsapp(datos, image_data=None, image_type='image/jpeg'):
     try:
         mensaje = (
             f"🚗 *NUEVO AGENDAMIENTO — MAX IA*\n\n"
@@ -150,17 +162,32 @@ def enviar_whatsapp(datos):
             "chatId": f"{WHATSAPP_DESTINO}@c.us",
             "message": mensaje
         }).encode('utf-8')
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={'Content-Type': 'application/json'}
-        )
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=10) as r:
-            print(f"WhatsApp enviado OK: {r.status}")
+            print(f"WhatsApp texto OK: {r.status}")
     except Exception as e:
-        print(f"Error WhatsApp: {e}")
+        print(f"Error WhatsApp texto: {e}")
 
-def manejar_agendamiento(respuesta, numero):
+def enviar_imagen_whatsapp(image_data, image_type, caption="📸 Imagen enviada por el cliente"):
+    try:
+        img_bytes = base64.b64decode(image_data)
+        ext = 'jpg' if 'jpeg' in image_type else image_type.split('/')[-1]
+        boundary = 'MaxIABound'
+        partes = []
+        partes.append(f'--{boundary}\r\nContent-Disposition: form-data; name="chatId"\r\n\r\n{WHATSAPP_DESTINO}@c.us'.encode())
+        partes.append(f'\r\n--{boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n{caption}'.encode())
+        partes.append(f'\r\n--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="foto.{ext}"\r\nContent-Type: {image_type}\r\n\r\n'.encode())
+        partes.append(img_bytes)
+        partes.append(f'\r\n--{boundary}--\r\n'.encode())
+        body = b''.join(partes)
+        url = f"https://7107.api.greenapi.com/waInstance{GREEN_API_INSTANCE}/sendFileByUpload/{GREEN_API_TOKEN}"
+        req = urllib.request.Request(url, data=body, headers={'Content-Type': f'multipart/form-data; boundary={boundary}'})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            print(f"Imagen WA OK: {r.status}")
+    except Exception as e:
+        print(f"Error imagen WA: {e}")
+
+def manejar_agendamiento(respuesta, numero, image_data=None, image_type='image/jpeg'):
     try:
         match = re.search(r'\[AGENDAMIENTO\](\{.*?\})', respuesta, re.DOTALL)
         if not match:
@@ -168,6 +195,8 @@ def manejar_agendamiento(respuesta, numero):
         datos = json.loads(match.group(1))
         datos['telefono'] = numero
         enviar_whatsapp(datos)
+        if image_data:
+            enviar_imagen_whatsapp(image_data, image_type, f"📸 Foto del auto de {datos.get('nombre','cliente')}")
         respuesta_limpia = re.sub(r'\[AGENDAMIENTO\]\{.*?\}', '', respuesta, flags=re.DOTALL).strip()
         respuesta_limpia += "\n\n✅ Todo listo! Nuestro equipo confirmara tu hora pronto. Cualquier duda al +569 8919 5027 🚗"
         return respuesta_limpia
@@ -175,22 +204,52 @@ def manejar_agendamiento(respuesta, numero):
         print(f"Error agendamiento: {e}")
         return re.sub(r'\[AGENDAMIENTO\].*', '', respuesta, flags=re.DOTALL).strip()
 
-def procesar_mensaje(numero, texto):
+def procesar_mensaje(numero, texto, image_data=None, image_type='image/jpeg'):
     palabras_reset = ['reiniciar', 'reset', 'hola de nuevo', 'nueva consulta']
     if texto.lower() in palabras_reset:
         borrar_historial(numero)
         texto = 'hola'
+
     historial = cargar_historial(numero)
-    historial.append({'role': 'user', 'content': texto})
+
+    if image_data:
+        if not texto or texto == 'hola':
+            texto = 'Analiza esta foto de mi auto y dime que servicios necesita.'
+        mensaje_claude = {
+            'role': 'user',
+            'content': [
+                {
+                    'type': 'image',
+                    'source': {
+                        'type': 'base64',
+                        'media_type': image_type,
+                        'data': image_data
+                    }
+                },
+                {
+                    'type': 'text',
+                    'text': texto
+                }
+            ]
+        }
+        historial_guardado = historial + [{'role': 'user', 'content': f'[imagen enviada] {texto}'}]
+    else:
+        mensaje_claude = {'role': 'user', 'content': texto}
+        historial_guardado = historial + [{'role': 'user', 'content': texto}]
+
+    mensajes_api = historial + [mensaje_claude]
+
     response = client.messages.create(
         model='claude-haiku-4-5-20251001',
         max_tokens=800,
         system=system_prompt(),
-        messages=historial
+        messages=mensajes_api
     )
     respuesta = response.content[0].text
+
     if '[AGENDAMIENTO]' in respuesta:
-        respuesta = manejar_agendamiento(respuesta, numero)
-    historial.append({'role': 'assistant', 'content': respuesta})
-    guardar_historial(numero, historial)
+        respuesta = manejar_agendamiento(respuesta, numero, image_data, image_type)
+
+    historial_guardado.append({'role': 'assistant', 'content': respuesta})
+    guardar_historial(numero, historial_guardado)
     return respuesta
